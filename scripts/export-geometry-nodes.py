@@ -1,7 +1,7 @@
 import bpy, json, uuid, mathutils
 from bpy import context
 from pathlib import Path
-from bpy_types import bpy_types
+import bpy
 
 import builtins as __builtin__
 
@@ -69,7 +69,7 @@ def convert_complex_type_to_json_format(default_value):
     if isinstance(default_value, float):
         return "{}".format(default_value)
 
-    if isinstance(default_value, bpy_types.bpy_prop_array):
+    if isinstance(default_value, bpy.types.bpy_prop_array):
         socket_array = []
         for socket_value in default_value:
             socket_array.append("{}".format(socket_value))
@@ -95,16 +95,20 @@ def handle_node_group(node_group):
     # Loop through the nodes
     for node in node_group.nodes:
         #print("Node", node.keys())
-        #print("Node props", dir(node))   
-        node["uuid"] = str(uuid.uuid4())
+        #print("Node props", dir(node))
+        if not "uuid" in node:
+            node["uuid"] = str(uuid.uuid4())
+        
+        if any(node.bl_idname == item for item in ["GeometryNodeGroup", "ShaderNodeGroup", "CompositorNodeGroup", "TextureNodeGroup"]):
+            handle_node_group(node.node_tree)
         
         # Store any necessary node data
         node_output = {
             "uuid": node["uuid"],
             "type": node.type,
+            "bl_idname": node.bl_idname,
             "location": convert_vector_to_obj(node.location),
             "width": node.width,
-            "width_hidden": node.width_hidden,
             "height": node.height,
             "dimensions": convert_vector_to_obj(node.dimensions),
             "name": node.name,
@@ -114,7 +118,6 @@ def handle_node_group(node_group):
             #"inputs": node.inputs,
             #"outputs": node.outputs,
             #"internal_links": node.internal_links,
-            "parent": node.parent,
             "use_custom_color": node.use_custom_color,
             "color": convert_color_to_obj(node.color),
             "select": node.select,
@@ -123,6 +126,11 @@ def handle_node_group(node_group):
             "hide": node.hide,
             "mute": node.mute,
         }
+
+        if node.parent:
+            if not "uuid" in node.parent:
+                node.parent["uuid"] = str(uuid.uuid4())
+            node_output["parent"] = node.parent["uuid"]
         
         # Loop through inputs and outputs and add those
         for input in node.inputs:
@@ -152,7 +160,7 @@ def handle_node_group(node_group):
             
             # Check if it has a default value - this is the user input node data
             if hasattr(input, "default_value"):
-                print("input default_value", input.default_value)
+                #print("input default_value", input.default_value)
                 input_data["default_value"] = convert_complex_type_to_json_format(input.default_value)
             
             # Add data to node inputs
@@ -160,7 +168,7 @@ def handle_node_group(node_group):
             
             
         for output in node.outputs:
-            print("[OUTPUT]:", dir(output))
+            #print("[OUTPUT]:", dir(output))
             # Store the input data
             output_data = {
                 "description": output.description,
@@ -187,7 +195,7 @@ def handle_node_group(node_group):
             
             # Check if it has a default value - this is the user input node data
             if hasattr(output, "default_value"):
-                print("output default_value", output.default_value)
+                #print("output default_value", output.default_value)
                 output_data["default_value"] = convert_complex_type_to_json_format(output.default_value)
             
             # Add data to node inputs
@@ -217,14 +225,14 @@ def handle_node_group(node_group):
         # FROM_SOCKET
         # We check if the default value exists (some slots don't have - like Geometry)
         if hasattr(link.from_socket, "default_value"):
-            print("[FROM SOCKET] type:", type(link.from_socket.default_value))
+            #print("[FROM SOCKET] type:", type(link.from_socket.default_value))
             socket_value = convert_complex_type_to_json_format(link.from_socket.default_value)
             if socket_value:
                 link_data["from_socket"]["default_value"] = socket_value
             
         # TO_SOCKET
         if hasattr(link.to_socket, "default_value"):
-            print("[TO SOCKET] type:", type(link.to_socket.default_value))
+            #print("[TO SOCKET] type:", type(link.to_socket.default_value))
             socket_value = convert_complex_type_to_json_format(link.to_socket.default_value)
             if socket_value:
                 link_data["to_socket"]["default_value"] = socket_value
@@ -237,14 +245,14 @@ def handle_node_group(node_group):
     # Grab the file name
     blend_file_name = blend_path.with_suffix("").name;
     # The template for the final JSON filename
-    name_template = "{}-nodes-{}"
+    name_template = "{}-nodes-{}-{}"
     
     # Check if file exists - increment if so
-    while blend_path.with_name(name_template.format(blend_file_name, file_index)).with_suffix(".json").exists():
+    while blend_path.with_name(name_template.format(blend_file_name, node_group.name, file_index)).with_suffix(".json").exists():
         file_index += 1
         
     # Create a file name with a number appended (e.g. your-file-01)
-    blend_versioned_name = name_template.format(blend_file_name, file_index)
+    blend_versioned_name = name_template.format(blend_file_name, node_group.name, file_index)
     # Creates a JSON path using current filename + location
     json_path = blend_path.with_name(blend_versioned_name).with_suffix(".json")
 
